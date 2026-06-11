@@ -137,6 +137,21 @@ body {
     min-height: 100vh;
 }
 
+/* ============ 绮掑瓙鐢诲竷 ============ */
+#particleCanvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* 閿佸睆妯″紡涓?canvas 鍙互鎺ユ敹榧犳爣浜嬩欢 */
+#lockScreen.active #particleCanvas {
+    pointer-events: auto;
+}
+
 /* ============ 閿佸畾鐣岄潰 ============ */
 .lock-card {
     width: 100%;
