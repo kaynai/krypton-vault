@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Krypton Vault 鈥?瀵嗙爜绠＄悊鍣?/title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>馃攼</text></svg>">
+</head>
+<body>
+    <!-- 鍔ㄦ€佽儗鏅?-->
+    <div class="bg-animated">
+        <div class="bg-blob bg-blob-1"></div>
+        <div class="bg-blob bg-blob-2"></div>
+        <div class="bg-blob bg-blob-3"></div>
+    </div>
+
+    <!-- 閿佸畾鐣岄潰 -->
+    <div id="lockScreen" class="screen active">
+        <div class="glass-card lock-card">
+            <div class="lock-icon">
+                <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="3">
+                    <rect x="18" y="35" width="44" height="38" rx="8"/>
+                    <path d="M28 35v-10a12 12 0 0 1 24 0v10" stroke-linecap="round"/>
+                    <circle cx="40" cy="55" r="4" fill="currentColor"/>
+                    <line x1="40" y1="58" x2="40" y2="64" stroke-linecap="round"/>
+                </svg>
+            </div>
+            <h1 class="app-title" contenteditable="true" spellcheck="false" id="appTitle">Krypton Vault</h1>
+            <p class="lock-subtitle">鐐瑰嚮鏍囬鍙嚜瀹氫箟鍚嶇О</p>
+
+            <div id="setupSection">
+                <p class="setup-hint">棣栨浣跨敤锛熻缃偍鐨勪富瀵嗙爜</p>
+                <div class="input-group">
+                    <input type="password" id="masterSetup" placeholder="璁剧疆涓诲瘑鐮? autocomplete="off">
+                    <div class="password-strength" id="strengthBar"></div>
+                </div>
+                <div class="input-group">
+                    <input type="password" id="masterSetupConfirm" placeholder="纭涓诲瘑鐮? autocomplete="off">
+                </div>
+                <button class="btn-primary" id="btnSetup">鍒涘缓淇濋櫓搴?/button>
+            </div>
+
+            <div id="unlockSection" class="hidden">
+                <div class="input-group">
+                    <input type="password" id="masterUnlock" placeholder="杈撳叆涓诲瘑鐮佽В閿? autocomplete="off">
+                </div>
+                <button class="btn-primary" id="btnUnlock">瑙ｉ攣</button>
+                <p class="error-msg" id="unlockError"></p>
+                <button class="btn-link" id="btnReset">閲嶇疆淇濋櫓搴?/button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 涓荤晫闈?-->
+    <div id="mainScreen" class="screen">
+        <!-- 椤堕儴瀵艰埅 -->
+        <header class="glass-header">
+            <div class="header-left">
+                <h2 class="header-title" id="headerTitle">Krypton Vault</h2>
+            </div>
+            <div class="header-right">
+                <button class="btn-icon" id="btnGenerator" title="瀵嗙爜鐢熸垚鍣?>馃攽</button>
+                <button class="btn-icon" id="btnSettings" title="璁剧疆">鈿欙笍</button>
+                <button class="btn-icon" id="btnLock" title="閿佸畾">馃敀</button>
+            </div>
+        </header>
+
+        <!-- 鎼滅储鏍?-->
+        <div class="search-wrapper">
+            <div class="glass-card search-card">
+                <svg class="search-icon-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input type="text" id="searchInput" placeholder="鎼滅储瀵嗙爜鏉＄洰..." autocomplete="off">
+                <button class="btn-primary btn-sm" id="btnAdd">+ 鏂板</button>
+            </div>
+        </div>
+
+        <!-- 鍒嗙被绛涢€?-->
+        <div class="category-bar">
+            <button class="cat-chip active" data-cat="all">鍏ㄩ儴</button>
+            <button class="cat-chip" data-cat="social">绀句氦</button>
+            <button class="cat-chip" data-cat="email">閭</button>
+            <button class="cat-chip" data-cat="finance">閲戣瀺</button>
+            <button class="cat-chip" data-cat="work">宸ヤ綔</button>
+            <button class="cat-chip" data-cat="other">鍏朵粬</button>
+        </div>
+
+        <!-- 瀵嗙爜鍒楄〃 -->
+        <div class="vault-container">
+            <div id="entryList" class="entry-list"></div>
+            <div id="emptyState" class="empty-state hidden">
+                <div class="empty-icon">馃梽锔?/div>
+                <p>杩樻病鏈変繚瀛樹换浣曞瘑鐮?/p>
+                <p class="empty-hint">鐐瑰嚮 "+ 鏂板" 寮€濮嬩娇鐢?/p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 鏂板/缂栬緫寮圭獥 -->
+    <div id="entryModal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="glass-card modal-card">
+            <div class="modal-header">
+                <h3 id="modalTitle">鏂板瀵嗙爜</h3>
+                <button class="btn-close" id="btnModalClose">鉁?/button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>缃戠珯/搴旂敤鍚嶇О</label>
+                    <input type="text" id="entryName" placeholder="渚嬪: Google">
+                </div>
+                <div class="input-group">
+                    <label>缃戝潃 (鍙€?</label>
+                    <input type="url" id="entryUrl" placeholder="https://example.com">
+                </div>
+                <div class="input-group">
+                    <label>鐢ㄦ埛鍚?閭</label>
+                    <input type="text" id="entryUsername" placeholder="your@email.com">
+                </div>
+                <div class="input-group">
+                    <label>瀵嗙爜</label>
+                    <div class="password-input-wrapper">
+                        <input type="password" id="entryPassword" placeholder="杈撳叆瀵嗙爜">
+                        <button class="btn-toggle-pw" id="btnTogglePw">馃憗锔?/button>
+                        <button class="btn-gen-pw" id="btnGenPw" title="鐢熸垚闅忔満瀵嗙爜">馃幉</button>
+                    </div>
+                </div>
+                <div class="input-group">
+                    <label>鍒嗙被</label>
+                    <select id="entryCategory">
+                        <option value="social">绀句氦</option>
+                        <option value="email">閭</option>
+                        <option value="finance">閲戣瀺</option>
+                        <option value="work">宸ヤ綔</option>
+                        <option value="other">鍏朵粬</option>
+                    </select>
+                </div>
+                <div class="input-group">
+                    <label>澶囨敞 (鍙€?</label>
+                    <textarea id="entryNotes" rows="2" placeholder="娣诲姞澶囨敞..."></textarea>
+                </div>
+                <input type="hidden" id="entryId">
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="btnModalCancel">鍙栨秷</button>
+                <button class="btn-primary" id="btnModalSave">淇濆瓨</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 瀵嗙爜鐢熸垚鍣ㄥ脊绐?-->
+    <div id="generatorModal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="glass-card modal-card modal-sm">
+            <div class="modal-header">
+                <h3>瀵嗙爜鐢熸垚鍣?/h3>
+                <button class="btn-close" id="btnGenClose">鉁?/button>
+            </div>
+            <div class="modal-body">
+                <div class="generated-pw-display" id="generatedPassword">鐐瑰嚮鐢熸垚</div>
+                <div class="gen-options">
+                    <div class="gen-option">
+                        <label>闀垮害: <span id="lenValue">16</span></label>
+                        <input type="range" id="pwLength" min="8" max="32" value="16">
+                    </div>
+                    <div class="gen-checks">
+                        <label class="check-label"><input type="checkbox" id="genUpper" checked> 澶у啓瀛楁瘝</label>
+                        <label class="check-label"><input type="checkbox" id="genLower" checked> 灏忓啓瀛楁瘝</label>
+                        <label class="check-label"><input type="checkbox" id="genNumber" checked> 鏁板瓧</label>
+                        <label class="check-label"><input type="checkbox" id="genSymbol" checked> 绗﹀彿</label>
+                    </div>
+                </div>
+                <button class="btn-primary btn-full" id="btnGenerate">鐢熸垚鏂板瘑鐮?/button>
+                <button class="btn-secondary btn-full" id="btnCopyGen">馃搵 澶嶅埗瀵嗙爜</button>
+                <button class="btn-outline btn-full" id="btnUseGen">鉁?浣跨敤姝ゅ瘑鐮?/button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 璁剧疆寮圭獥 -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-backdrop"></div>
+        <div class="glass-card modal-card modal-sm">
+            <div class="modal-header">
+                <h3>璁剧疆</h3>
+                <button class="btn-close" id="btnSettingsClose">鉁?/button>
+            </div>
+            <div class="modal-body">
+                <div class="input-group">
+                    <label>淇濋櫓搴撳悕绉?/label>
+                    <input type="text" id="settingsVaultName" placeholder="Krypton Vault">
+                </div>
+                <div class="input-group">
+                    <label>鑷姩閿佸畾 (鍒嗛挓, 0=绂佺敤)</label>
+                    <input type="number" id="settingsAutoLock" min="0" max="60" value="5">
+                </div>
+                <div class="input-group">
+                    <label>淇敼涓诲瘑鐮?/label>
+                    <input type="password" id="settingsOldMaster" placeholder="褰撳墠涓诲瘑鐮?>
+                    <input type="password" id="settingsNewMaster" placeholder="鏂颁富瀵嗙爜" style="margin-top:8px">
+                </div>
+                <div class="settings-actions">
+                    <button class="btn-outline btn-full" id="btnExport">馃摛 瀵煎嚭鏁版嵁</button>
+                    <button class="btn-outline btn-full" id="btnImport">馃摜 瀵煎叆鏁版嵁</button>
+                    <input type="file" id="importFile" accept=".json" class="hidden">
+                </div>
+                <button class="btn-danger btn-full" id="btnResetAll">馃棏锔?閲嶇疆鎵€鏈夋暟鎹?/button>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-primary btn-full" id="btnSettingsSave">淇濆瓨璁剧疆</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div id="toast" class="toast"></div>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
