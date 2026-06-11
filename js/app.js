@@ -4,12 +4,12 @@
    ============================================ */
 
 // ============ 常量与状态 ============
-const STORAGE_KEY = 'kv_encrypted_vault';
-const SETTINGS_KEY = 'kv_settings';
-const SALT_KEY = 'kv_salt';
+const KV_USERS_KEY = 'kv_users';           // 用户注册表 [{username, userKey}]
+const STORAGE_PREFIX = 'kv_vault_';
+const SETTINGS_PREFIX = 'kv_settings_';
+const SALT_PREFIX = 'kv_salt_';
+const CUSTOM_CAT_PREFIX = 'kv_custom_categories_';
 const VAULT_VERSION = 1;
-
-const CUSTOM_CAT_KEY = 'kv_custom_categories';
 
 const PRESET_CATEGORIES = [
     { id: 'all',    name: '全部', icon: '🏠',  color: '#d946ef' },
@@ -36,6 +36,8 @@ function getCategoryInfo(catId) {
 }
 
 let appState = {
+    currentUser: null,        // 当前登录的用户名
+    currentUserKey: null,     // 当前用户的存储键哈希
     masterKey: null,          // CryptoKey
     masterPassword: null,     // 明文主密码（仅内存中保存用于重加密）
     entries: [],              // 解密后的密码条目列表
@@ -61,13 +63,21 @@ const dom = {
 
     // 锁定界面
     appTitle: $('#appTitle'),
+    userSelectSection: $('#userSelectSection'),
+    userList: $('#userList'),
+    noUsersHint: $('#noUsersHint'),
+    btnShowCreate: $('#btnShowCreate'),
     setupSection: $('#setupSection'),
+    setupUsername: $('#setupUsername'),
     unlockSection: $('#unlockSection'),
+    unlockUserName: $('#unlockUserName'),
     masterSetup: $('#masterSetup'),
     masterSetupConfirm: $('#masterSetupConfirm'),
     masterUnlock: $('#masterUnlock'),
     btnSetup: $('#btnSetup'),
     btnUnlock: $('#btnUnlock'),
+    btnBackToUsers: $('#btnBackToUsers'),
+    btnBackFromCreate: $('#btnBackFromCreate'),
     btnReset: $('#btnReset'),
     unlockError: $('#unlockError'),
     strengthBar: $('#strengthBar'),
@@ -131,6 +141,91 @@ const dom = {
     // Toast
     toast: $('#toast'),
 };
+
+// ============ 用户管理（多用户存储隔离） ============
+function userStorageKey(prefix, userKey) {
+    return prefix + (userKey || appState.currentUserKey || '');
+}
+
+function getRegisteredUsers() {
+    const raw = localStorage.getItem(KV_USERS_KEY);
+    return raw ? JSON.parse(raw) : [];
+}
+
+function saveRegisteredUsers(users) {
+    localStorage.setItem(KV_USERS_KEY, JSON.stringify(users));
+}
+
+async function hashUsername(username) {
+    // 用 SHA-256 生成存储键（避免特殊字符问题）
+    const data = new TextEncoder().encode(username.toLowerCase().trim());
+    const hash = await crypto.subtle.digest('SHA-256', data);
+    return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 24);
+}
+
+async function registerUser(username) {
+    const name = username.trim();
+    if (!name || name.length < 1) return null;
+    const users = getRegisteredUsers();
+    if (users.some(u => u.username.toLowerCase() === name.toLowerCase())) {
+        return null; // 用户名已存在
+    }
+    const userKey = await hashUsername(name);
+    users.push({ username: name, userKey });
+    saveRegisteredUsers(users);
+    return userKey;
+}
+
+function deleteUserAccount(username) {
+    const users = getRegisteredUsers();
+    const user = users.find(u => u.username === username);
+    if (!user) return;
+    // 清除该用户的所有存储数据
+    localStorage.removeItem(STORAGE_PREFIX + user.userKey);
+    localStorage.removeItem(SETTINGS_PREFIX + user.userKey);
+    localStorage.removeItem(SALT_PREFIX + user.userKey);
+    localStorage.removeItem(CUSTOM_CAT_PREFIX + user.userKey);
+    // 从注册表移除
+    saveRegisteredUsers(users.filter(u => u.username !== username));
+}
+
+function renderUserList() {
+    const users = getRegisteredUsers();
+    dom.noUsersHint.classList.toggle('hidden', users.length > 0);
+
+    if (users.length === 0) {
+        dom.userList.innerHTML = '';
+        return;
+    }
+
+    dom.userList.innerHTML = users.map(u =>
+        `<button class="user-chip" data-username="${escapeHtml(u.username)}">👤 ${escapeHtml(u.username)}</button>`
+    ).join('');
+}
+
+function showUserSelect() {
+    dom.setupSection.classList.add('hidden');
+    dom.unlockSection.classList.add('hidden');
+    dom.userSelectSection.classList.remove('hidden');
+    renderUserList();
+}
+
+function selectUserForUnlock(username) {
+    const users = getRegisteredUsers();
+    const user = users.find(u => u.username === username);
+    if (!user) return;
+
+    appState.currentUser = username;
+    appState.currentUserKey = user.userKey;
+
+    dom.userSelectSection.classList.add('hidden');
+    dom.setupSection.classList.add('hidden');
+    dom.unlockSection.classList.remove('hidden');
+    dom.unlockUserName.textContent = username;
+    dom.unlockError.textContent = '';
+    dom.masterUnlock.value = '';
+    dom.masterUnlock.focus();
+}
 
 // ============ 工具函数 ============
 function showToast(msg, type = '') {
@@ -237,47 +332,48 @@ async function decryptData(key, encryptedObj) {
 
 // ============ 持久化 ============
 function saveEncryptedVault(encryptedData) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(encryptedData));
+    localStorage.setItem(userStorageKey(STORAGE_PREFIX), JSON.stringify(encryptedData));
 }
 
 function getEncryptedVault() {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(userStorageKey(STORAGE_PREFIX));
     return raw ? JSON.parse(raw) : null;
 }
 
 function getSalt() {
-    let saltB64 = localStorage.getItem(SALT_KEY);
+    const saltKey = userStorageKey(SALT_PREFIX);
+    let saltB64 = localStorage.getItem(saltKey);
     if (!saltB64) {
         const salt = crypto.getRandomValues(new Uint8Array(16));
         saltB64 = arrayBufferToBase64(salt);
-        localStorage.setItem(SALT_KEY, saltB64);
+        localStorage.setItem(saltKey, saltB64);
     }
     return base64ToArrayBuffer(saltB64);
 }
 
 function loadSettings() {
-    const raw = localStorage.getItem(SETTINGS_KEY);
+    const raw = localStorage.getItem(userStorageKey(SETTINGS_PREFIX));
     if (raw) {
         try { Object.assign(appState.settings, JSON.parse(raw)); } catch {}
     }
 }
 
 function saveSettings() {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify(appState.settings));
+    localStorage.setItem(userStorageKey(SETTINGS_PREFIX), JSON.stringify(appState.settings));
     dom.headerTitle.textContent = appState.settings.vaultName;
     dom.appTitle.textContent = appState.settings.vaultName;
     document.title = appState.settings.vaultName + ' — 密码管理器';
 }
 
 function loadCustomCategories() {
-    const raw = localStorage.getItem(CUSTOM_CAT_KEY);
+    const raw = localStorage.getItem(userStorageKey(CUSTOM_CAT_PREFIX));
     if (raw) {
         try { appState.customCategories = JSON.parse(raw); } catch { appState.customCategories = []; }
     }
 }
 
 function saveCustomCategories() {
-    localStorage.setItem(CUSTOM_CAT_KEY, JSON.stringify(appState.customCategories));
+    localStorage.setItem(userStorageKey(CUSTOM_CAT_PREFIX), JSON.stringify(appState.customCategories));
 }
 
 function generateCatColor(name) {
@@ -289,30 +385,282 @@ function generateCatColor(name) {
     return CATEGORY_PALETTE[Math.abs(hash) % CATEGORY_PALETTE.length];
 }
 
+// ============ 小玩偶眼睛交互（模板风格） ============
+(function initMascotEyes() {
+    const mascotState = {
+        mouseX: 0,
+        mouseY: 0,
+        isTyping: false,
+        isPurpleBlinking: false,
+        isDarkBlinking: false,
+        isLookingAtEachOther: false,
+        isPurplePeeking: false,
+    };
+
+    const purpleChar = document.getElementById('purple-char');
+    const darkChar = document.getElementById('dark-char');
+    const orangeChar = document.getElementById('orange-char');
+    const yellowChar = document.getElementById('yellow-char');
+    const yellowMouth = document.getElementById('yellowMouth');
+    const mascotHint = document.getElementById('mascotHint');
+
+    if (!purpleChar || !yellowChar) return;
+
+    function calculatePosition(charElement) {
+        if (!charElement) return { faceX: 0, faceY: 0, bodySkew: 0 };
+        const rect = charElement.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 3;
+        const deltaX = mascotState.mouseX - centerX;
+        const deltaY = mascotState.mouseY - centerY;
+        const faceX = Math.max(-12, Math.min(12, deltaX / 20));
+        const faceY = Math.max(-8, Math.min(8, deltaY / 30));
+        const bodySkew = Math.max(-5, Math.min(5, -deltaX / 120));
+        return { faceX, faceY, bodySkew };
+    }
+
+    function calculatePupilPosition(eyeElement, maxDistance, forceLookX, forceLookY) {
+        if (!eyeElement) return { x: 0, y: 0 };
+        if (forceLookX !== undefined && forceLookY !== undefined) return { x: forceLookX, y: forceLookY };
+        const eye = eyeElement.getBoundingClientRect();
+        const eyeCenterX = eye.left + eye.width / 2;
+        const eyeCenterY = eye.top + eye.height / 2;
+        const deltaX = mascotState.mouseX - eyeCenterX;
+        const deltaY = mascotState.mouseY - eyeCenterY;
+        const distance = Math.min(Math.sqrt(deltaX ** 2 + deltaY ** 2), maxDistance);
+        const angle = Math.atan2(deltaY, deltaX);
+        return { x: Math.cos(angle) * distance, y: Math.sin(angle) * distance };
+    }
+
+    function updateCharacterStates() {
+        if (mascotState.isTyping) {
+            mascotState.isLookingAtEachOther = true;
+            setTimeout(() => { mascotState.isLookingAtEachOther = false; updateAll(); }, 800);
+        } else {
+            mascotState.isLookingAtEachOther = false;
+        }
+        updateAll();
+    }
+
+    function updateCharacterTransforms() {
+        const purplePos = calculatePosition(purpleChar);
+        const darkPos = calculatePosition(darkChar);
+        const orangePos = calculatePosition(orangeChar);
+        const yellowPos = calculatePosition(yellowChar);
+
+        // 紫色角色：输入时变高歪头，密码可见时偷看
+        if (purpleChar) {
+            const isTyping = mascotState.isTyping;
+            const height = isTyping ? '270px' : '230px';
+            purpleChar.style.height = height;
+            const skew = isTyping ? purplePos.bodySkew - 10 : purplePos.bodySkew;
+            purpleChar.style.transform = `skewX(${skew}deg)`;
+            const eyes = purpleChar.querySelector('.char-eyes');
+            if (eyes) {
+                eyes.style.left = isTyping ? '38px' : `${22 + purplePos.faceX}px`;
+                eyes.style.top = isTyping ? '48px' : `${28 + purplePos.faceY}px`;
+            }
+        }
+
+        // 深色角色
+        if (darkChar) {
+            const isTyping = mascotState.isTyping;
+            const skew = isTyping ? darkPos.bodySkew : darkPos.bodySkew;
+            darkChar.style.transform = `skewX(${skew}deg)`;
+            const eyes = darkChar.querySelector('.char-eyes');
+            if (eyes) {
+                eyes.style.left = isTyping ? '24px' : `${16 + darkPos.faceX}px`;
+                eyes.style.top = isTyping ? '12px' : `${24 + darkPos.faceY}px`;
+            }
+        }
+
+        // 橙色角色
+        if (orangeChar) {
+            orangeChar.style.transform = `skewX(${orangePos.bodySkew}deg)`;
+            const eyes = orangeChar.querySelector('.char-eyes');
+            if (eyes) {
+                eyes.style.left = `${55 + orangePos.faceX}px`;
+                eyes.style.top = `${52 + orangePos.faceY}px`;
+            }
+        }
+
+        // 黄色主角
+        if (yellowChar) {
+            yellowChar.style.transform = `skewX(${yellowPos.bodySkew}deg)`;
+            const eyes = yellowChar.querySelector('.char-eyes');
+            if (eyes) {
+                eyes.style.left = `${28 + yellowPos.faceX}px`;
+                eyes.style.top = `${28 + yellowPos.faceY}px`;
+            }
+            if (yellowMouth) {
+                yellowMouth.style.left = `${20 + yellowPos.faceX}px`;
+                yellowMouth.style.top = `${58 + yellowPos.faceY}px`;
+            }
+        }
+    }
+
+    function updatePupilPositions() {
+        const eyeBalls = document.querySelectorAll('.eye-ball');
+        eyeBalls.forEach((eyeBall) => {
+            const pupil = eyeBall.querySelector('.pupil');
+            if (!pupil) return;
+
+            let forceLookX, forceLookY;
+            const isPurpleChar = eyeBall.closest('#purple-char') !== null;
+            const isDarkChar = eyeBall.closest('#dark-char') !== null;
+
+            if (isPurpleChar) {
+                if (mascotState.isPurplePeeking) {
+                    forceLookX = 4; forceLookY = 5;
+                } else if (mascotState.isLookingAtEachOther) {
+                    forceLookX = 3; forceLookY = 4;
+                }
+            } else if (isDarkChar) {
+                if (mascotState.isPurplePeeking) {
+                    forceLookX = -4; forceLookY = -4;
+                } else if (mascotState.isLookingAtEachOther) {
+                    forceLookX = 0; forceLookY = -4;
+                }
+            }
+
+            const maxDist = (isPurpleChar || isDarkChar) ? 5 : 4;
+            const pos = calculatePupilPosition(eyeBall, maxDist, forceLookX, forceLookY);
+            pupil.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+        });
+
+        // 瞳孔直接作为圆点（橙色和黄色角色）
+        const darkPupils = document.querySelectorAll('.pupil-dark');
+        darkPupils.forEach((pupil) => {
+            const parentChar = pupil.closest('.mascot-char');
+            const isPurplePeeking = mascotState.isPurplePeeking;
+            const maxDist = 4;
+            let forceLookX, forceLookY;
+            if (isPurplePeeking) {
+                forceLookX = -5; forceLookY = -4;
+            }
+            // 使用 parent 的 eye container 计算位置
+            const eyeContainer = pupil.parentElement;
+            if (eyeContainer) {
+                const pos = calculatePupilPosition(eyeContainer, maxDist, forceLookX, forceLookY);
+                pupil.style.transform = `translate(${pos.x}px, ${pos.y}px)`;
+            }
+        });
+
+        // 眨眼效果
+        const purpleEyeBalls = purpleChar ? purpleChar.querySelectorAll('.eye-ball') : [];
+        const darkEyeBalls = darkChar ? darkChar.querySelectorAll('.eye-ball') : [];
+        purpleEyeBalls.forEach(eye => { eye.style.height = mascotState.isPurpleBlinking ? '2px' : '18px'; });
+        darkEyeBalls.forEach(eye => { eye.style.height = mascotState.isDarkBlinking ? '2px' : '15px'; });
+    }
+
+    function startBlinkingEffects() {
+        function schedulePurpleBlink() {
+            setTimeout(() => {
+                mascotState.isPurpleBlinking = true;
+                updatePupilPositions();
+                setTimeout(() => {
+                    mascotState.isPurpleBlinking = false;
+                    updatePupilPositions();
+                    schedulePurpleBlink();
+                }, 150);
+            }, Math.random() * 4000 + 3000);
+        }
+        function scheduleDarkBlink() {
+            setTimeout(() => {
+                mascotState.isDarkBlinking = true;
+                updatePupilPositions();
+                setTimeout(() => {
+                    mascotState.isDarkBlinking = false;
+                    updatePupilPositions();
+                    scheduleDarkBlink();
+                }, 150);
+            }, Math.random() * 4000 + 3000);
+        }
+        schedulePurpleBlink();
+        scheduleDarkBlink();
+    }
+
+    function updateAll() {
+        updateCharacterTransforms();
+        updatePupilPositions();
+    }
+
+    // 鼠标跟随
+    document.addEventListener('mousemove', (e) => {
+        mascotState.mouseX = e.clientX;
+        mascotState.mouseY = e.clientY;
+        updateAll();
+    });
+
+    // 密码输入框聚焦/失焦
+    function isPasswordField(el) {
+        return ['masterUnlock', 'masterSetup', 'masterSetupConfirm'].includes(el.id);
+    }
+
+    document.addEventListener('focusin', (e) => {
+        if (isPasswordField(e.target)) {
+            mascotState.isTyping = true;
+            mascotState.isPurplePeeking = true;
+            updateCharacterStates();
+            if (mascotHint) {
+                mascotHint.textContent = '在偷看你的密码... 🫣';
+                mascotHint.classList.add('peeking');
+            }
+            // 偷看时黄色小人嘴巴保持横线不变
+            if (yellowMouth) {
+                yellowMouth.style.borderRadius = '4px';
+                yellowMouth.style.width = '50px';
+                yellowMouth.style.height = '4px';
+                yellowMouth.style.left = '20px';
+            }
+        }
+    });
+
+    document.addEventListener('focusout', (e) => {
+        if (isPasswordField(e.target)) {
+            mascotState.isTyping = false;
+            setTimeout(() => {
+                mascotState.isPurplePeeking = false;
+                updateAll();
+            }, 500);
+            if (mascotHint) {
+                mascotHint.textContent = '在看着你哦 👀';
+                mascotHint.classList.remove('peeking');
+            }
+            if (yellowMouth) {
+                yellowMouth.style.borderRadius = '4px';
+                yellowMouth.style.width = '50px';
+                yellowMouth.style.height = '4px';
+                yellowMouth.style.left = '20px';
+            }
+        }
+    });
+
+    // 密码输入时微抖动
+    document.addEventListener('input', (e) => {
+        if (!mascotState.isPurplePeeking || !isPasswordField(e.target)) return;
+        updateAll();
+    });
+
+    // 启动
+    startBlinkingEffects();
+    updateAll();
+})();
+
 // ============ 应用初始化 ============
 async function init() {
-    loadSettings();
-    loadCustomCategories();
     dom.headerTitle.textContent = appState.settings.vaultName;
     dom.appTitle.textContent = appState.settings.vaultName;
     document.title = appState.settings.vaultName + ' — 密码管理器';
     dom.settingsVaultName.value = appState.settings.vaultName;
     dom.settingsAutoLock.value = appState.settings.autoLockMinutes;
 
-    // 渲染分类栏（登录页也提前渲染好结构）
+    // 渲染分类栏（提前渲染结构）
     renderCategoryBar();
     renderCategoryDropdown();
 
-    const vault = getEncryptedVault();
-    if (vault) {
-        // 已有保险库，显示解锁
-        dom.setupSection.classList.add('hidden');
-        dom.unlockSection.classList.remove('hidden');
-    } else {
-        // 新用户
-        dom.setupSection.classList.remove('hidden');
-        dom.unlockSection.classList.add('hidden');
-    }
+    // 显示用户选择界面
+    showUserSelect();
 
     switchScreen('lock');
     bindEvents();
@@ -320,9 +668,18 @@ async function init() {
 
 // ============ 创建保险库 ============
 async function createVault() {
+    const username = dom.setupUsername.value.trim();
     const password = dom.masterSetup.value;
     const confirm = dom.masterSetupConfirm.value;
 
+    if (!username || username.length < 1) {
+        showToast('请输入用户名', 'error');
+        return;
+    }
+    if (username.length > 20) {
+        showToast('用户名不超过20个字符', 'error');
+        return;
+    }
     if (!password || password.length < 4) {
         showToast('密码长度至少4位', 'error');
         return;
@@ -332,9 +689,19 @@ async function createVault() {
         return;
     }
 
+    // 检查用户名是否已存在
+    const userKey = await registerUser(username);
+    if (!userKey) {
+        showToast('用户名已存在，请换一个', 'error');
+        return;
+    }
+
+    appState.currentUser = username;
+    appState.currentUserKey = userKey;
+
     const salt = getSalt();
     const key = await deriveKey(password, salt);
-    const entries = []; // 空保险库
+    const entries = [];
     const encrypted = await encryptData(key, { entries, version: VAULT_VERSION });
     saveEncryptedVault(encrypted);
 
@@ -342,12 +709,19 @@ async function createVault() {
     appState.masterPassword = password;
     appState.entries = entries;
 
+    // 新用户初始化设置
+    appState.settings = { vaultName: 'Krypton Vault', autoLockMinutes: 5 };
+    appState.customCategories = [];
+    saveSettings();
+    saveCustomCategories();
+
     switchScreen('main');
     renderEntries();
     startAutoLockTimer();
-    showToast('保险库创建成功！', 'success');
+    showToast(`账号「${username}」创建成功！`, 'success');
     dom.masterSetup.value = '';
     dom.masterSetupConfirm.value = '';
+    dom.setupUsername.value = '';
 }
 
 // ============ 解锁保险库 ============
@@ -355,6 +729,10 @@ async function unlockVault() {
     const password = dom.masterUnlock.value;
     if (!password) {
         showToast('请输入主密码', 'error');
+        return;
+    }
+    if (!appState.currentUserKey) {
+        dom.unlockError.textContent = '请先选择账号';
         return;
     }
 
@@ -377,33 +755,44 @@ async function unlockVault() {
     appState.masterKey = key;
     appState.masterPassword = password;
     appState.entries = data.entries || [];
+
+    // 加载该用户的设置和自定义分类
+    loadSettings();
+    loadCustomCategories();
+    dom.headerTitle.textContent = appState.settings.vaultName;
+    dom.appTitle.textContent = appState.settings.vaultName;
+    dom.settingsVaultName.value = appState.settings.vaultName;
+    dom.settingsAutoLock.value = appState.settings.autoLockMinutes;
+    renderCategoryBar();
+    renderCategoryDropdown();
+
     dom.unlockError.textContent = '';
     dom.masterUnlock.value = '';
 
     switchScreen('main');
     renderEntries();
     startAutoLockTimer();
-    showToast(`欢迎回来，共 ${appState.entries.length} 条记录`, 'success');
+    showToast(`欢迎「${appState.currentUser}」，共 ${appState.entries.length} 条记录`, 'success');
 }
 
 // ============ 锁定 ============
 function lockVault() {
     clearTimeout(appState.autoLockTimer);
+    appState.currentUser = null;
+    appState.currentUserKey = null;
     appState.masterKey = null;
     appState.masterPassword = null;
     appState.entries = [];
     appState.currentCategory = 'all';
     appState.selectedEntryId = null;
+    appState.customCategories = [];
 
     dom.searchInput.value = '';
     dom.entryList.innerHTML = '';
     dom.emptyState.classList.add('hidden');
 
-    const vault = getEncryptedVault();
-    dom.setupSection.classList.toggle('hidden', !!vault);
-    dom.unlockSection.classList.toggle('hidden', !vault);
-
     closeAllModals();
+    showUserSelect();
     switchScreen('lock');
 }
 
@@ -507,12 +896,37 @@ async function saveEntry() {
     showToast(existingIdx >= 0 ? '密码已更新' : '密码已保存', 'success');
 }
 
-async function deleteEntry(id) {
-    if (!confirm('确定要删除这条密码吗？此操作不可恢复。')) return;
+function deleteEntry(id) {
+    // 使用内置确认弹窗（比 window.confirm 更可靠）
+    const entry = appState.entries.find(e => e.id === id);
+    if (!entry) return;
+
+    const overlay = document.getElementById('confirmOverlay');
+    const msgEl = document.getElementById('confirmMsg');
+    if (!overlay || !msgEl) {
+        // 降级到原生 confirm
+        if (!window.confirm('确定删除？')) return;
+        doDeleteEntry(id);
+        return;
+    }
+
+    msgEl.textContent = '确定要删除「' + entry.name + '」吗？';
+    _pendingDeleteId = id;
+    overlay.classList.add('active');
+}
+
+async function doDeleteEntry(id) {
     appState.entries = appState.entries.filter(e => e.id !== id);
-    await persistVault();
+    try {
+        await persistVault();
+        showToast('已删除', 'success');
+    } catch (err) {
+        console.error('删除持久化失败', err);
+        showToast('删除失败，请重试', 'error');
+        // 恢复数据
+        return;
+    }
     renderEntries();
-    showToast('已删除', 'success');
 }
 
 async function copyToClipboard(text, label) {
@@ -612,14 +1026,9 @@ function renderEntries() {
             if (entry) copyToClipboard(entry.password, '密码');
         });
     });
-
-    dom.entryList.querySelectorAll('.delete').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            deleteEntry(btn.dataset.id);
-        });
-    });
 }
+
+let _pendingDeleteId = null;
 
 function escapeHtml(text) {
     const div = document.createElement('div');
@@ -770,15 +1179,43 @@ async function changeMasterPassword() {
     dom.settingsNewMaster.value = '';
 }
 
-// ============ 重置 ============
+// ============ 重置（删除当前锁定界面选中的用户） ============
+function resetCurrentUser() {
+    const username = appState.currentUser;
+    if (!username) return;
+    const confirmOverlay = document.getElementById('confirmOverlay');
+    const msgEl = document.getElementById('confirmMsg');
+    if (confirmOverlay && msgEl) {
+        msgEl.textContent = `确定要删除账号「${username}」及其所有密码数据吗？`;
+        _pendingDeleteUser = username;
+        confirmOverlay.classList.add('active');
+    } else if (confirm(`确定删除账号「${username}」吗？此操作不可恢复！`)) {
+        doResetUser(username);
+    }
+}
+
+let _pendingDeleteUser = null;
+
+function doResetUser(username) {
+    deleteUserAccount(username);
+    appState.currentUser = null;
+    appState.currentUserKey = null;
+    appState.masterKey = null;
+    appState.masterPassword = null;
+    appState.entries = [];
+    appState.customCategories = [];
+    showToast(`账号「${username}」已删除`, 'success');
+    showUserSelect();
+}
+
 async function resetAll() {
-    if (!confirm('⚠️ 确定要删除所有数据吗？此操作不可恢复！\n\n请确保已导出备份。')) return;
+    if (!confirm('⚠️ 确定要删除当前账号的所有密码数据吗？此操作不可恢复！\n\n请确保已导出备份。')) return;
     if (!confirm('再次确认：删除所有密码数据？')) return;
 
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(SALT_KEY);
-    localStorage.removeItem(SETTINGS_KEY);
-    localStorage.removeItem(CUSTOM_CAT_KEY);
+    localStorage.removeItem(userStorageKey(STORAGE_PREFIX));
+    localStorage.removeItem(userStorageKey(SALT_PREFIX));
+    localStorage.removeItem(userStorageKey(SETTINGS_PREFIX));
+    localStorage.removeItem(userStorageKey(CUSTOM_CAT_PREFIX));
 
     appState.entries = [];
     appState.masterKey = null;
@@ -790,7 +1227,7 @@ async function resetAll() {
     showToast('所有数据已清除', 'success');
 
     setTimeout(() => {
-        location.reload();
+        lockVault();
     }, 500);
 }
 
@@ -895,6 +1332,43 @@ function deleteCustomCategory(catId) {
 
 // ============ 事件绑定 ============
 function bindEvents() {
+    // === 用户选择界面 ===
+    // 用户芯片点击（事件委托）
+    dom.userList.addEventListener('click', (e) => {
+        const chip = e.target.closest('.user-chip');
+        if (!chip) return;
+        const username = chip.dataset.username;
+        if (username) selectUserForUnlock(username);
+    });
+
+    // 显示创建账号表单
+    dom.btnShowCreate.addEventListener('click', () => {
+        dom.userSelectSection.classList.add('hidden');
+        dom.unlockSection.classList.add('hidden');
+        dom.setupSection.classList.remove('hidden');
+        dom.setupUsername.value = '';
+        dom.masterSetup.value = '';
+        dom.masterSetupConfirm.value = '';
+        dom.setupUsername.focus();
+    });
+
+    // 从解锁返回用户列表
+    dom.btnBackToUsers.addEventListener('click', () => {
+        appState.currentUser = null;
+        appState.currentUserKey = null;
+        dom.masterUnlock.value = '';
+        dom.unlockError.textContent = '';
+        showUserSelect();
+    });
+
+    // 从创建返回用户列表
+    dom.btnBackFromCreate.addEventListener('click', () => {
+        dom.setupUsername.value = '';
+        dom.masterSetup.value = '';
+        dom.masterSetupConfirm.value = '';
+        showUserSelect();
+    });
+
     // 创建保险库
     dom.btnSetup.addEventListener('click', createVault);
     dom.masterSetupConfirm.addEventListener('keydown', (e) => {
@@ -912,11 +1386,8 @@ function bindEvents() {
 
     // 锁定
     dom.btnLock.addEventListener('click', lockVault);
-    dom.btnReset.addEventListener('click', () => {
-        if (confirm('确定要重置保险库吗？所有数据将被清除。')) {
-            resetAll();
-        }
-    });
+    // 删除账号按钮（在解锁界面上）
+    dom.btnReset.addEventListener('click', resetCurrentUser);
 
     // 新增
     dom.btnAdd.addEventListener('click', openAddModal);
@@ -944,11 +1415,26 @@ function bindEvents() {
             return;
         }
 
-        // 添加分类按钮
+        // 添加分类按钮 — 切换弹窗
         const addBtn = e.target.closest('#btnAddCategory');
         if (addBtn) {
-            const name = prompt('请输入新分类名称（最多10个字符）：');
-            if (name) addCustomCategory(name);
+            e.stopPropagation();
+            e.preventDefault();
+            const popup = document.getElementById('catAddPopup');
+            if (popup) {
+                const isActive = popup.classList.contains('active');
+                if (isActive) {
+                    popup.classList.remove('active');
+                } else {
+                    // 动态定位弹窗在按钮下方
+                    const rect = addBtn.getBoundingClientRect();
+                    popup.style.top = (rect.bottom + 8) + 'px';
+                    popup.style.left = Math.min(rect.left, window.innerWidth - 220) + 'px';
+                    popup.classList.add('active');
+                    const input = document.getElementById('catAddInput');
+                    if (input) setTimeout(() => input.focus(), 50);
+                }
+            }
             return;
         }
     });
@@ -1073,6 +1559,99 @@ function bindEvents() {
         }
     });
 
+    // 分类弹窗：确认按钮
+    const catAddPopup = document.getElementById('catAddPopup');
+    const catAddInput = document.getElementById('catAddInput');
+    const catAddConfirm = document.getElementById('catAddConfirm');
+    const catAddCancel = document.getElementById('catAddCancel');
+
+    if (catAddConfirm) {
+        catAddConfirm.addEventListener('click', () => {
+            const name = catAddInput.value.trim();
+            if (name) addCustomCategory(name);
+            catAddPopup.classList.remove('active');
+            catAddInput.value = '';
+        });
+    }
+    if (catAddCancel) {
+        catAddCancel.addEventListener('click', () => {
+            catAddPopup.classList.remove('active');
+            catAddInput.value = '';
+        });
+    }
+    if (catAddInput) {
+        catAddInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const name = catAddInput.value.trim();
+                if (name) addCustomCategory(name);
+                catAddPopup.classList.remove('active');
+                catAddInput.value = '';
+            }
+            if (e.key === 'Escape') {
+                catAddPopup.classList.remove('active');
+                catAddInput.value = '';
+            }
+        });
+    }
+
+    // 全局：点击外部关闭分类弹窗
+    document.addEventListener('click', (e) => {
+        const popup = document.getElementById('catAddPopup');
+        if (popup && popup.classList.contains('active')) {
+            if (!e.target.closest('#catAddPopup') && !e.target.closest('#btnAddCategory')) {
+                popup.classList.remove('active');
+            }
+        }
+    });
+
+    // 删除确认弹窗事件
+    const confirmOverlay = document.getElementById('confirmOverlay');
+    const confirmOk = document.getElementById('confirmOk');
+    const confirmCancel = document.getElementById('confirmCancel');
+
+    if (confirmOk) {
+        confirmOk.addEventListener('click', async () => {
+            const id = _pendingDeleteId;
+            const username = _pendingDeleteUser;
+            confirmOverlay.classList.remove('active');
+            _pendingDeleteId = null;
+            _pendingDeleteUser = null;
+            if (username) {
+                doResetUser(username);
+            } else if (id) {
+                await doDeleteEntry(id);
+            }
+        });
+    }
+    if (confirmCancel) {
+        confirmCancel.addEventListener('click', () => {
+            confirmOverlay.classList.remove('active');
+            _pendingDeleteId = null;
+            _pendingDeleteUser = null;
+        });
+    }
+    // 点击遮罩关闭
+    if (confirmOverlay) {
+        confirmOverlay.addEventListener('click', (e) => {
+            if (e.target === confirmOverlay) {
+                confirmOverlay.classList.remove('active');
+                _pendingDeleteId = null;
+                _pendingDeleteUser = null;
+            }
+        });
+    }
+
+    // 密码列表：事件委托处理删除按钮
+    dom.entryList.addEventListener('click', (e) => {
+        const delBtn = e.target.closest('.entry-action-btn.delete');
+        if (!delBtn) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const id = delBtn.dataset.id;
+        if (id) deleteEntry(id);
+    });
+
     // 全局：键盘快捷键
     document.addEventListener('keydown', (e) => {
         // Ctrl+L 锁定
@@ -1091,6 +1670,14 @@ function bindEvents() {
         }
         // Escape 关闭弹窗
         if (e.key === 'Escape') {
+            // 优先关闭确认弹窗
+            const confirmOverlay = document.getElementById('confirmOverlay');
+            if (confirmOverlay && confirmOverlay.classList.contains('active')) {
+                confirmOverlay.classList.remove('active');
+                _pendingDeleteId = null;
+                _pendingDeleteUser = null;
+                return;
+            }
             closeAllModals();
         }
     });

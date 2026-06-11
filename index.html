@@ -15,40 +15,124 @@
         <div class="bg-blob bg-blob-3"></div>
     </div>
 
-    <!-- 锁定界面 -->
+    <!-- 锁定界面 — 左右分栏布局 -->
     <div id="lockScreen" class="screen active">
-        <canvas id="particleCanvas"></canvas>
-        <div class="glass-card lock-card">
-            <div class="lock-icon">
-                <svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="3">
-                    <rect x="18" y="35" width="44" height="38" rx="8"/>
-                    <path d="M28 35v-10a12 12 0 0 1 24 0v10" stroke-linecap="round"/>
-                    <circle cx="40" cy="55" r="4" fill="currentColor"/>
-                    <line x1="40" y1="58" x2="40" y2="64" stroke-linecap="round"/>
-                </svg>
-            </div>
-            <h1 class="app-title" contenteditable="true" spellcheck="false" id="appTitle">Krypton Vault</h1>
-            <p class="lock-subtitle">点击标题可自定义名称</p>
-
-            <div id="setupSection">
-                <p class="setup-hint">首次使用？设置您的主密码</p>
-                <div class="input-group">
-                    <input type="password" id="masterSetup" placeholder="设置主密码" autocomplete="off">
-                    <div class="password-strength" id="strengthBar"></div>
-                </div>
-                <div class="input-group">
-                    <input type="password" id="masterSetupConfirm" placeholder="确认主密码" autocomplete="off">
-                </div>
-                <button class="btn-primary" id="btnSetup">创建保险库</button>
+        <!-- 左侧：小玩偶插画区域 -->
+        <div class="lock-left">
+            <!-- 左上角品牌 -->
+            <div class="lock-left-brand">
+                <div class="brand-icon-box">🔐</div>
+                <span class="brand-name">Krypton Vault</span>
             </div>
 
-            <div id="unlockSection" class="hidden">
-                <div class="input-group">
-                    <input type="password" id="masterUnlock" placeholder="输入主密码解锁" autocomplete="off">
+            <!-- 小玩偶角色区域 -->
+            <div class="mascot-scene" id="mascotScene">
+                <div class="mascot-stage" id="mascotStage">
+                    <!-- 紫色高个角色 -->
+                    <div id="purple-char" class="mascot-char" style="left: 30px; width: 100px; height: 230px; background-color: #6C3FF5; border-radius: 12px 12px 0 0; z-index: 1;">
+                        <div class="char-eyes" style="left: 22px; top: 28px; gap: 18px;">
+                            <div class="eye-ball"><div class="pupil"></div></div>
+                            <div class="eye-ball"><div class="pupil"></div></div>
+                        </div>
+                    </div>
+                    <!-- 深色角色 -->
+                    <div id="dark-char" class="mascot-char" style="left: 120px; width: 75px; height: 180px; background-color: #2D2D2D; border-radius: 10px 10px 0 0; z-index: 2;">
+                        <div class="char-eyes" style="left: 16px; top: 24px; gap: 12px;">
+                            <div class="eye-ball eye-ball-sm"><div class="pupil"></div></div>
+                            <div class="eye-ball eye-ball-sm"><div class="pupil"></div></div>
+                        </div>
+                    </div>
+                    <!-- 橙色圆胖角色 -->
+                    <div id="orange-char" class="mascot-char" style="left: -10px; width: 150px; height: 110px; background-color: #FF9B6B; border-radius: 80px 80px 0 0; z-index: 3;">
+                        <div class="char-eyes char-eyes-dark" style="left: 55px; top: 52px; gap: 16px;">
+                            <div class="pupil-dark"></div>
+                            <div class="pupil-dark"></div>
+                        </div>
+                    </div>
+                    <!-- 黄色主角 -->
+                    <div id="yellow-char" class="mascot-char" style="left: 175px; width: 90px; height: 135px; background-color: #E8D754; border-radius: 48px 48px 0 0; z-index: 4;">
+                        <div class="char-eyes char-eyes-dark" style="left: 28px; top: 28px; gap: 14px;">
+                            <div class="pupil-dark"></div>
+                            <div class="pupil-dark"></div>
+                        </div>
+                        <div class="char-mouth" id="yellowMouth" style="left: 20px; top: 58px; width: 50px; height: 4px;"></div>
+                    </div>
                 </div>
-                <button class="btn-primary" id="btnUnlock">解锁</button>
-                <p class="error-msg" id="unlockError"></p>
-                <button class="btn-link" id="btnReset">重置保险库</button>
+                <p class="mascot-hint" id="mascotHint">在看着你哦 👀</p>
+            </div>
+
+            <!-- 底部链接 -->
+            <div class="lock-left-footer">
+                <a href="#" onclick="return false;">安全加密</a>
+                <a href="#" onclick="return false;">仅本地存储</a>
+                <a href="#" onclick="return false;">关于</a>
+            </div>
+        </div>
+
+        <!-- 右侧：登录表单卡片 -->
+        <div class="lock-right">
+            <div class="glass-card lock-card">
+                <div class="lock-brand">
+                    <span class="brand-icon">🔐</span>
+                    <h1 class="app-title" contenteditable="true" spellcheck="false" id="appTitle">Krypton Vault</h1>
+                </div>
+
+                <!-- 用户选择界面 -->
+                <div id="userSelectSection">
+                    <p class="welcome-text">欢迎回来！</p>
+                    <p class="setup-hint">选择账号或创建新账号</p>
+                    <div class="user-list" id="userList">
+                        <!-- 动态渲染 -->
+                    </div>
+                    <div id="noUsersHint" class="hidden">
+                        <p class="setup-hint" style="margin-top:10px;">还没有账号，请创建</p>
+                    </div>
+                    <button class="btn-outline btn-full" id="btnShowCreate" style="margin-top:14px;">+ 创建新账号</button>
+                </div>
+
+                <!-- 解锁界面（选好用户后输入密码） -->
+                <div id="unlockSection" class="hidden">
+                    <p class="welcome-text">欢迎回来！</p>
+                    <p class="unlock-user-label">账号：<strong id="unlockUserName"></strong></p>
+                    <div class="input-group">
+                        <label>密码</label>
+                        <input type="password" id="masterUnlock" placeholder="输入主密码解锁" autocomplete="off">
+                    </div>
+                    <div class="login-options">
+                        <label class="remember-label">
+                            <input type="checkbox" id="rememberMe"> 记住我
+                        </label>
+                        <a href="#" class="forgot-link" onclick="return false;">忘记密码？</a>
+                    </div>
+                    <button class="btn-primary" id="btnUnlock">登 录</button>
+                    <p class="error-msg" id="unlockError"></p>
+                    <div style="display:flex;gap:10px;margin-top:10px;">
+                        <button class="btn-link" id="btnBackToUsers">← 切换账号</button>
+                        <button class="btn-link" id="btnReset" style="color:var(--danger);">删除此账号</button>
+                    </div>
+                </div>
+
+                <!-- 创建新账号 -->
+                <div id="setupSection" class="hidden">
+                    <p class="welcome-text">创建新账号</p>
+                    <div class="input-group">
+                        <label>昵称</label>
+                        <input type="text" id="setupUsername" placeholder="用户名（如 Alice、Bob）" autocomplete="off" maxlength="20">
+                    </div>
+                    <div class="input-group">
+                        <label>密码</label>
+                        <input type="password" id="masterSetup" placeholder="设置主密码" autocomplete="off">
+                        <div class="password-strength" id="strengthBar"></div>
+                    </div>
+                    <div class="input-group">
+                        <label>确认密码</label>
+                        <input type="password" id="masterSetupConfirm" placeholder="确认主密码" autocomplete="off">
+                    </div>
+                    <button class="btn-primary" id="btnSetup">创建账号</button>
+                    <button class="btn-link" id="btnBackFromCreate" style="margin-top:8px;">← 返回账号列表</button>
+                </div>
+
+                <p class="lock-footer">安全加密 · 仅本地存储</p>
             </div>
         </div>
     </div>
@@ -206,10 +290,31 @@
         </div>
     </div>
 
-    <!-- Toast -->
+        <!-- Toast -->
     <div id="toast" class="toast"></div>
 
-    <script src="js/particles.js"></script>
+    <!-- 分类添加弹窗（放在 category-bar 外部避免被 overflow 裁剪） -->
+    <div class="cat-add-popup" id="catAddPopup">
+        <input type="text" id="catAddInput" placeholder="分类名称" maxlength="10" autocomplete="off">
+        <div class="cat-add-popup-actions">
+            <button class="btn-outline" id="catAddCancel">取消</button>
+            <button class="btn-primary" id="catAddConfirm">添加</button>
+        </div>
+    </div>
+
+    <!-- 删除确认弹窗 -->
+    <div class="confirm-overlay" id="confirmOverlay">
+        <div class="confirm-dialog glass-card">
+            <div class="confirm-icon">⚠️</div>
+            <p class="confirm-msg" id="confirmMsg">确定要删除吗？</p>
+            <p class="confirm-hint">此操作不可恢复</p>
+            <div class="confirm-actions">
+                <button class="btn-secondary" id="confirmCancel">取消</button>
+                <button class="btn-danger" id="confirmOk">确认删除</button>
+            </div>
+        </div>
+    </div>
+
     <script src="js/app.js"></script>
 </body>
 </html>
